@@ -27,10 +27,14 @@ def getSelfNominationByNode(node: TestNode) -> int:
 
 
 def nominationByNode(name: str, byNode: TestNode, instId: int):
-    return Nomination(name, instId, byNode.viewNo,
-                      byNode.replicas[instId].lastOrderedPPSeqNo)
+    replica = byNode.replicas[instId]
+    summary = replica.last_ordered_summary
+    return Nomination(name, instId, byNode.viewNo, replica.lastOrderedPPSeqNo,
+                      summary)
 
 
 def primaryByNode(name: str, byNode: TestNode, instId: int):
-    return Primary(name, instId, byNode.viewNo,
-                   byNode.replicas[instId].lastOrderedPPSeqNo)
+    replica = byNode.replicas[instId]
+    summary = replica.last_ordered_summary
+    return Primary(name, instId, byNode.viewNo, replica.lastOrderedPPSeqNo,
+                   summary)

@@ -54,8 +54,8 @@ def testNonPrimarySendsAPrePrepare(looper, nodeSet, setup, propagated1):
             recvdPps = recvdPrePrepare(r)
             assert len(recvdPps) == 1
             assert compareNamedTuple(recvdPps[0]['pp'], ppr,
-                                     f.DIGEST.nm, f.STATE_ROOT.nm,
-                                     f.TXN_ROOT.nm)
+                                     f.DIGEST.nm, f.POST_STATE_ROOT.nm,
+                                     f.POST_TXN_ROOT.nm, f.POST_LEDGER_SIZE)
             nodeSuspicions = len(getNodeSuspicions(
                 r.node, Suspicions.PPR_FRM_NON_PRIMARY.code))
             assert nodeSuspicions == 1

@@ -282,7 +282,8 @@ class TestPrimaryElector(PrimaryElector):
                   replica.Replica.doPrepare,
                   replica.Replica.doOrder,
                   replica.Replica.discard,
-                  replica.Replica.stashOutsideWatermarks
+                  replica.Replica.stashOutsideWatermarks,
+                  replica.Replica.primary_changed
                   ])
 class TestReplica(replica.Replica):
     def __init__(self, *args, **kwargs):
