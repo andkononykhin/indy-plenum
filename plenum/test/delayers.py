@@ -2,7 +2,7 @@ from typing import Iterable
 
 from plenum.common.types import f, Propagate, PrePrepare, \
     Prepare, Commit, InstanceChange, LedgerStatus, ConsistencyProof, CatchupReq, \
-    Nomination, CatchupRep
+    Nomination, CatchupRep, Primary, Reelection
 from plenum.common.constants import OP_FIELD_NAME
 from plenum.common.util import getCallableName
 from plenum.test.test_client import TestClient
@@ -63,9 +63,19 @@ def delayerMethod(method, delay):
     return inner
 
 
-def nom_delay(delay: float):
+def nom_delay(delay: float, inst_id=None):
     # Delayer of NOMINATE requests
-    return delayerMsgTuple(delay, Nomination)
+    return delayerMsgTuple(delay, Nomination, instFilter=inst_id)
+
+
+def prim_delay(delay: float, inst_id=None):
+    # Delayer of PRIMARY requests
+    return delayerMsgTuple(delay, Primary, instFilter=inst_id)
+
+
+def rel_delay(delay: float, inst_id=None):
+    # Delayer of REELECTION requests
+    return delayerMsgTuple(delay, Reelection, instFilter=inst_id)
 
 
 def ppgDelay(delay: float):
@@ -142,3 +152,4 @@ def delayNonPrimaries(nodeSet, instId, delay):
     nonPrimReps = getNonPrimaryReplicas(nodeSet, instId)
     for r in nonPrimReps:
         r.node.nodeIbStasher.delay(ppDelay(delay, instId))
+    return nonPrimReps

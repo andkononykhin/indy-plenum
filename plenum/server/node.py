@@ -8,7 +8,6 @@ from binascii import unhexlify
 from collections import OrderedDict
 from collections import deque, defaultdict
 from contextlib import closing
-from functools import partial
 from typing import Dict, Any, Mapping, Iterable, List, Optional, \
     Sequence, Set, Tuple
 
@@ -1638,7 +1637,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
         :param instChg: the instance change request
         :param frm: the name of the node that sent this `msg`
         """
-        logger.debug("Node {} received instance change request: {} from {}".
+        logger.debug("{} received instance change request: {} from {}".
                      format(self, instChg, frm))
 
         # TODO: add sender to blacklist?
@@ -1679,7 +1678,6 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
             self.startViewChange(view_no)
         else:
             logger.debug(msg)
-        self.instanceChanges.pop(view_no)
         return r
 
     def checkPerformance(self):
@@ -1687,7 +1685,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
         Check if master instance is slow and send an instance change request.
         :returns True if master performance is OK, otherwise False
         """
-        logger.debug("{} checking its performance".format(self))
+        logger.trace("{} checking its performance".format(self))
 
         # Move ahead only if the node has synchronized its state with other
         # nodes
@@ -1698,7 +1696,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
             self.sendNodeRequestSpike()
             if self.monitor.isMasterDegraded():
                 self.sendInstanceChange(self.viewNo+1)
-                logger.debug('{} sent view change performance degraded '
+                logger.debug('{} sent view change since performance degraded '
                              'of master instance'.format(self))
                 self.do_view_change_if_possible(self.viewNo+1)
                 return False
@@ -1733,9 +1731,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
     def _record_inst_change_msg(self, msg, frm):
         view_no = msg.viewNo
         self.instanceChanges.addVote(msg, frm)
-        if msg.viewNo > self.viewNo and len(self.instanceChanges[view_no]) == 2*self.f+1:
-            logger.debug('{} got view change message for view {} from suff. '
-                         'nodes, so triggering view change'.format(self, view_no))
+        if msg.viewNo > self.viewNo:
             self.do_view_change_if_possible(view_no)
 
     def sendInstanceChange(self, view_no: int,
@@ -1853,14 +1849,11 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
         the last ppSeqno and state and txn root for previous view
         """
         self.view_change_in_progress = False
+        self.instanceChanges.pop(view_no-1, None)
 
     def ordered_prev_view_msgs(self, inst_id, pp_seqno):
         logger.debug('{} ordered previous view batch {} by instance {}'.
                      format(self, pp_seqno, inst_id))
-        if self.expecting_during_view_change[inst_id] < pp_seqno:
-            self.expecting_during_view_change[inst_id] = -1
-            if set(self.expecting_during_view_change) == {-1}:
-                self.view_change_in_progress = False
 
     def set_new_view_expected_state(self, view_no):
         last_ordered = [_ for _ in

@@ -410,7 +410,8 @@ class PrimaryElector(PrimaryDecider):
                     # If the maximum primary declarations are for this node
                     # then make it primary
                     ledger_summary = dict(ledger_summary)
-                    replica.primary_changed(primary, seqNo, ledger_summary)
+                    replica.primary_changed(primary, prim.viewNo, seqNo,
+                                            ledger_summary)
 
                     if instId == 0:
                         self.previous_master_primary = None
@@ -459,7 +460,7 @@ class PrimaryElector(PrimaryDecider):
         :param reelection: the reelection request
         :param sender: name of the  node from which the reelection was sent
         """
-        logger.debug("{}'s elector started processing reelection msg".
+        logger.debug("{} started processing reelection msg".
                      format(self.name))
         # Check for election round number to discard any previous
         # reelection round message
@@ -520,6 +521,7 @@ class PrimaryElector(PrimaryDecider):
                     logger.debug("{} achieved reelection quorum but no-tie, "
                                  "{} as not able to reach an acceptable "
                                  "state".format(replica, sndrRep))
+                    self.setElectionDefaults(instId)
                     self.nominateReplica(instId)
             else:
                 logger.debug("{} does not have re-election quorum yet. "
@@ -633,6 +635,8 @@ class PrimaryElector(PrimaryDecider):
                     self.sendReelection(instId,
                                         [n[0] for n in primary_candidates])
             else:
+                logger.debug('{} cannot find acceptable state for instance {}, '
+                             'sending re-election'.format(self, instId))
                 self.sendReelection(instId)
         else:
             self.schedulePrimaryDecision(instId)
@@ -786,8 +790,8 @@ class PrimaryElector(PrimaryDecider):
                 r.append(acceptable_summary)
         else:
             r.append({})
-        logger.debug('{} found acceptable last ordered state to be {}'.
-                     format(self, r))
+        logger.debug('{} found acceptable last ordered state for instance {} '
+                     'to be {}'.format(self, inst_id, r))
         return r
 
     def schedulePrimaryDecision(self, instId: int):

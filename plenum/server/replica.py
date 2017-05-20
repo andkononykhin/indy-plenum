@@ -234,6 +234,10 @@ class Replica(HasActionQueue, MessageProcessor):
 
         self.lastOrderedPPSeqNo = 0
 
+        # Keeps the `lastOrderedPPSeqNo` and ledger_summary for each view no.
+        # GC on view change complete
+        self.view_ends_at = OrderedDict()
+
     def txn_ledger_size(self, ledgerId, toHex=True):
         if not self.isMaster:
             return None
@@ -391,13 +395,15 @@ class Replica(HasActionQueue, MessageProcessor):
             #     self.removeObsoletePpReqs()
             self._stateChanged()
 
-    def primary_changed(self, primaryName, lastOrderedPPSeqNo, ledger_summary):
+    def primary_changed(self, primary_name, view_no,
+                        last_ordered_pp_seq_no, ledger_summary):
+        self.view_ends_at[view_no] = (last_ordered_pp_seq_no, ledger_summary)
         # TODO: this needs to change
-        if self.lastOrderedPPSeqNo < lastOrderedPPSeqNo:
-            self.lastOrderedPPSeqNo = lastOrderedPPSeqNo
-        self.primaryName = primaryName
-        if primaryName == self.name:
-            assert self.lastOrderedPPSeqNo >= lastOrderedPPSeqNo
+        if self.lastOrderedPPSeqNo < last_ordered_pp_seq_no:
+            self.lastOrderedPPSeqNo = last_ordered_pp_seq_no
+        self.primaryName = primary_name
+        if primary_name == self.name:
+            assert self.lastOrderedPPSeqNo >= last_ordered_pp_seq_no
             self.lastPrePrepareSeqNo = self.lastOrderedPPSeqNo
         else:
             for lid in self.requestQueues:
@@ -523,11 +529,9 @@ class Replica(HasActionQueue, MessageProcessor):
                                 self.lastBatchCreated +
                                 self.config.Max3PCBatchWait <
                                 time.perf_counter() and len(q) > 0):
-                oldStateRootHash = self.stateRootHash(lid, toHex=False)
                 ppReq = self.create3PCBatch(lid)
                 self.sendPrePrepare(ppReq)
                 r += 1
-
         if r > 0:
             self.lastBatchCreated = time.perf_counter()
         return r

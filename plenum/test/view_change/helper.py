@@ -66,3 +66,26 @@ def ensure_view_change(looper, nodes, client, wallet):
     for node in nodes:
         node.monitor.isMasterDegraded = old_meths[node.name]
     return old_view_no + 1
+
+
+def check_each_node_reaches_same_end_for_view(nodes, view_no):
+    # Check if each node agreed on the same ledger summary and last ordered
+    # seq no for same view
+    args = {}
+    vals = {}
+    for node in nodes:
+        params = [e.params for e in node.replicas[0].spylog.getAll(
+            node.replicas[0].primary_changed.__name__)
+                  if e.params['view_no'] == view_no]
+        assert params
+        args[node.name] = (params[0]['last_ordered_pp_seq_no'],
+                           params[0]['ledger_summary'])
+        vals[node.name] = node.replicas[0].view_ends_at[view_no]
+
+    arg = list(args.values())[0]
+    for a in args.values():
+        assert a == arg
+
+    val = list(args.values())[0]
+    for v in vals.values():
+        assert v == val
