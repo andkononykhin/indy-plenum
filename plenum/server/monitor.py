@@ -1,4 +1,5 @@
 import time
+import statistics
 from datetime import datetime
 from statistics import mean
 from typing import Dict, Iterable, Optional
@@ -284,7 +285,9 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
         tooLow = r < self.Delta
         if tooLow:
             logger.info("{} master throughput ratio {} is lower than "
-                        "Delta {}.".format(self, r, self.Delta))
+                        "Delta {}, diff (Delta) {}".format(
+                            self, r, self.Delta, self.Delta - r
+            ))
         else:
             logger.trace("{} master throughput ratio {} is acceptable.".
                          format(self, r))
@@ -298,8 +301,17 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
         r = self.masterReqLatencyTooHigh or \
             any([lat > self.Lambda for lat in self.masterReqLatencies.values()])
         if r:
+            stat = [lat - self.Lambda for lat in self.masterReqLatencies.values()
+                        if lat > self.Lambda]
             logger.info("{} found master's latency to be higher than the "
-                         "threshold for some or all requests.".format(self))
+                            "threshold for some or all requests: "
+                            "Lambda {}, diffs (Lambda): mean {} max {}, "
+                            "stored state: {}".format(
+                             self, self.Lambda,
+                             statistics.mean(stat) if len(stat) else '<no data>',
+                             max(stat) if len(stat) else '<no data>',
+                             self.masterReqLatencyTooHigh
+            ))
         else:
             logger.trace("{} found master's latency to be lower than the "
                          "threshold for all requests.".format(self))
@@ -324,7 +336,9 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
             if avgLatM[cid] - lat > self.Omega:
                 logger.info("{} found difference between master's and "
                              "backups's avg latency to be higher than the "
-                             "threshold".format(self))
+                             "threshold: Omega {}, diff (Omega) {}".format(
+                              self, self.Omega, avgLatM[cid] - lat - self.Omega
+                ))
                 logger.trace(
                     "{}'s master's avg request latency is {} and backup's "
                     "avg request latency is {} ".
