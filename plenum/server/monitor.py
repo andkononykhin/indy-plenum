@@ -232,23 +232,22 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
         now = time.perf_counter()
         durations = {}
         for identifier, reqId in reqIdrs:
-            reqId = (identifier, reqId)
-            if reqId not in self.requestOrderingStarted:
+            if (identifier, reqId) not in self.requestOrderingStarted:
                 logger.debug(
                     "Got ordered request with identifier {} and reqId {} "
                     "but it was from a previous view".
                     format(identifier, reqId))
                 continue
-            duration = now - self.requestOrderingStarted[reqId]
+            duration = now - self.requestOrderingStarted[(identifier, reqId)]
             if byMaster:
                 # TODO: retry from node.processOrdered seems incorrect
                 # and will break the following logic, we need only the final
                 # turn here to measure the duration (latency)
-                if reqId in self.masterReqExtraLatencies:
-                    duration -= self.masterReqExtraLatencies[reqId]
-                    del self.masterReqExtraLatencies[reqId]
+                if (identifier, reqId) in self.masterReqExtraLatencies:
+                    duration -= self.masterReqExtraLatencies[(identifier, reqId)]
+                    del self.masterReqExtraLatencies[(identifier, reqId)]
 
-                self.masterReqLatencies[reqId] = duration
+                self.masterReqLatencies[(identifier, reqId)] = duration
                 self.orderedRequestsInLast.append(now)
                 self.latenciesByMasterInLast.append((now, duration))
             else:
@@ -265,7 +264,7 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
             self.clientAvgReqLatencies[instId][identifier] = \
                 (totalReqs + 1, (totalReqs * avgTime + duration) / (totalReqs + 1))
 
-            durations[identifier, reqId] = duration
+            durations[(identifier, reqId)] = duration
 
         reqs, tm = self.numOrderedRequests[instId]
         orderedNow = len(durations)
