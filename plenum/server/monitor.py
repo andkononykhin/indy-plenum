@@ -235,8 +235,10 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
 
         # TODO: Inefficient, as on every request a minimum of a large list is
         # calculated
-        # If any
         if min(r[0] for r in self.numOrderedRequests) == (reqs + orderedNow):
+            # If these requests is ordered by the last instance then increment
+            # total requests, but why is this important, why cant is ordering
+            # by master not enough?
             self.totalRequests += orderedNow
             self.postOnReqOrdered()
             if 0 == reqs:
@@ -299,7 +301,8 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
         than the acceptable threshold
         """
         r = self.masterReqLatencyTooHigh or \
-            any([lat > self.Lambda for lat in self.masterReqLatencies.values()])
+            next(((key, lat) for key, lat in self.masterReqLatencies.items() if
+                  lat > self.Lambda), None)
         if r:
             stat = [lat - self.Lambda for lat in self.masterReqLatencies.values()
                         if lat > self.Lambda]
@@ -333,11 +336,12 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
                 logger.trace("{} found master had no record yet for {}".
                              format(self, cid))
                 return False
-            if avgLatM[cid] - lat > self.Omega:
+            d = avgLatM[cid] - lat
+            if d > self.Omega:
                 logger.info("{} found difference between master's and "
                              "backups's avg latency to be higher than the "
                              "threshold: Omega {}, diff (Omega) {}".format(
-                              self, self.Omega, avgLatM[cid] - lat - self.Omega
+                              self, self.Omega, d - self.Omega
                 ))
                 logger.trace(
                     "{}'s master's avg request latency is {} and backup's "
@@ -381,7 +385,7 @@ class Monitor(HasActionQueue, PluginLoaderHelper):
         reqs, tm = self.numOrderedRequests[instId]
         return reqs / tm if tm else None
 
-    def getInstanceMetrics(self, forAllExcept: int) -> float:
+    def getInstanceMetrics(self, forAllExcept: int) -> Tuple[Optional[int], Optional[float]]:
         """
         Calculate and return the average throughput of all the instances except
         the one specified as `forAllExcept`.

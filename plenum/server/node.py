@@ -35,7 +35,7 @@ from plenum.common.ledger_manager import LedgerManager
 from plenum.common.message_processor import MessageProcessor
 from plenum.common.motor import Motor
 from plenum.common.plugin_helper import loadPlugins
-from plenum.common.request import Request
+from plenum.common.request import Request, SafeRequest
 from plenum.common.roles import Roles
 from plenum.common.signer_simple import SimpleSigner
 from plenum.common.stacks import nodeStackClass, clientStackClass
@@ -98,6 +98,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
 
     suspicions = {s.code: s.reason for s in Suspicions.get_list()}
     keygenScript = "init_plenum_keys"
+    _client_request_class = SafeRequest
 
     def __init__(self,
                  name: str,
@@ -148,6 +149,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
 
         self.ledgerManager.addLedger(DOMAIN_LEDGER_ID,
                                      self.domainLedger,
+                                     preCatchupStartClbk=self.preDomainLedgerCatchUp,
                                      postCatchupCompleteClbk=self.postDomainLedgerCaughtUp,
                                      postTxnAddedToLedgerClbk=self.postTxnFromCatchupAddedToLedger)
         self.states[DOMAIN_LEDGER_ID] = self.loadDomainState()
@@ -1280,7 +1282,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
             self.doStaticValidation(msg[f.IDENTIFIER.nm],
                                     msg[f.REQ_ID.nm],
                                     msg[OPERATION])
-            cls = Request
+            cls = self._client_request_class
         elif OP_FIELD_NAME in msg:
             op = msg.pop(OP_FIELD_NAME)
             cls = TaggedTuples.get(op, None)
@@ -1293,6 +1295,10 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
                                        msg.get(f.REQ_ID.nm))
         try:
             cMsg = cls(**msg)
+        except TypeError as ex:
+            raise InvalidClientRequest(msg.get(f.IDENTIFIER.nm),
+                                       msg.get(f.REQ_ID.nm),
+                                       str(ex))
         except Exception as ex:
             raise InvalidClientRequest(msg.get(f.IDENTIFIER.nm),
                                        msg.get(f.REQ_ID.nm)) from ex
@@ -1380,6 +1386,13 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
         for nm in self.nodestack.connecteds:
             self.sendDomainLedgerStatus(nm)
         self.ledgerManager.processStashedLedgerStatuses(DOMAIN_LEDGER_ID)
+
+    def preDomainLedgerCatchUp(self):
+        """
+        Ledger got out of sync. Setting node's state accordingly
+        :return:
+        """
+        self.mode = Mode.syncing
 
     def postDomainLedgerCaughtUp(self, **kwargs):
         """
@@ -1543,7 +1556,7 @@ class Node(HasActionQueue, Motor, Propagator, MessageProcessor, HasFileStorage,
         logger.debug("Node {} received propagated request: {}".
                      format(self.name, msg))
         reqDict = msg.request
-        request = Request(**reqDict)
+        request = SafeRequest(**reqDict)
 
         clientName = msg.senderClient
 
