@@ -8,7 +8,8 @@ from stp_core.types import HA
 from plenum.common.stack_manager import TxnStackManager
 from plenum.common.constants import TXN_TYPE, NODE, ALIAS, DATA, TARGET_NYM, NODE_IP,\
     NODE_PORT, CLIENT_IP, CLIENT_PORT, VERKEY, SERVICES, VALIDATOR, CLIENT_STACK_SUFFIX
-from plenum.common.types import PoolLedgerTxns, f, HA
+from plenum.common.types import f, HA
+from plenum.common.messages.node_messages import PoolLedgerTxns
 from plenum.common.util import getMaxFailures
 from stp_core.common.log import getlogger
 
@@ -33,6 +34,7 @@ class HasPoolManager(TxnStackManager):
         self.tempNodeTxns = {}  # type: Dict[int, Dict[str, Dict]]
 
     def poolTxnReceived(self, msg: PoolLedgerTxns, frm):
+        global t
         logger.debug("{} received pool txn {} from {}".format(self, msg, frm))
         txn = getattr(msg, t)
         seqNo = txn.pop(F.seqNo.name)
@@ -47,8 +49,8 @@ class HasPoolManager(TxnStackManager):
                 # TODO: Shouldnt this use `checkIfMoreThanFSameItems`
                 txns = [item for item, count in
                         collections.Counter(
-                            [json.dumps(t, sort_keys=True)
-                             for t in self.tempNodeTxns[seqNo].values()]
+                            [json.dumps(_t, sort_keys=True)
+                             for _t in self.tempNodeTxns[seqNo].values()]
                         ).items() if count > f]
                 if len(txns) > 0:
                     txn = json.loads(txns[0])

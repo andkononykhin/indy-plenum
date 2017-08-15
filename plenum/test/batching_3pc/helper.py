@@ -1,11 +1,12 @@
 import types
 from binascii import hexlify
 
-from plenum.common.constants import DOMAIN_LEDGER_ID
 from plenum.common.startable import Mode
 from plenum.common.txn_util import reqToTxn
-from plenum.common.types import ThreePhaseType
-from plenum.test.helper import waitForSufficientRepliesForRequests, send_signed_requests
+from plenum.common.messages.node_messages import *
+from plenum.common.util import check_if_all_equal_in_list
+from plenum.test.helper import waitForSufficientRepliesForRequests, \
+    send_signed_requests
 
 
 def checkNodesHaveSameRoots(nodes, checkUnCommitted=True,
@@ -21,7 +22,7 @@ def checkNodesHaveSameRoots(nodes, checkUnCommitted=True,
     if checkLastOrderedPpSeqNo:
         ppSeqNos = set()
         for node in nodes:
-            ppSeqNos.add(node.replicas[0].lastOrderedPPSeqNo)
+            ppSeqNos.add(node.replicas[0].last_ordered_3pc)
 
         assert len(ppSeqNos) == 1
 
@@ -78,15 +79,17 @@ def add_txns_to_ledger_before_order(replica, reqs):
             ledgerInfo = ledger_manager.getLedgerInfoByType(ledger_id)
 
             ledger_manager.preCatchupClbk(ledger_id)
+            pp = self.getPrePrepare(commit.viewNo, commit.ppSeqNo)
             for req in reqs:
-                ledger_manager._add_txn(ledger_id, ledger, ledgerInfo, reqToTxn(req))
-            ledger_manager.catchupCompleted(DOMAIN_LEDGER_ID, commit.ppSeqNo)
+                ledger_manager._add_txn(ledger_id, ledger, ledgerInfo, reqToTxn(req, pp.ppTime))
+            ledger_manager.catchupCompleted(DOMAIN_LEDGER_ID, (node.viewNo, commit.ppSeqNo))
 
             added = True
 
         return origMethod(commit)
 
     replica.tryOrder = types.MethodType(tryOrderAndAddTxns, replica)
+
 
 def start_precatchup_before_order(replica):
     called = False
@@ -104,6 +107,7 @@ def start_precatchup_before_order(replica):
         return origMethod(commit)
 
     replica.tryOrder = types.MethodType(tryOrderAndAddTxns, replica)
+
 
 def make_node_syncing(replica, three_phase_type: ThreePhaseType):
     added = False
@@ -126,3 +130,11 @@ def fail_on_execute_batch_on_master(node):
             raise Exception('Should not process Ordered at this point')
 
     node.processOrdered = types.MethodType(fail_process_ordered, node)
+
+
+def check_uncommitteds_equal(nodes):
+    t_roots = [node.domainLedger.uncommittedRootHash for node in nodes]
+    s_roots = [node.states[DOMAIN_LEDGER_ID].headHash for node in nodes]
+    assert check_if_all_equal_in_list(t_roots)
+    assert check_if_all_equal_in_list(s_roots)
+    return t_roots[0], s_roots[0]
