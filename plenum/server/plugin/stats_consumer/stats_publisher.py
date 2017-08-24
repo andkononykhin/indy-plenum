@@ -23,6 +23,14 @@ class StatsPublisher:
         self._loop = asyncio.get_event_loop()
         self._connectionSem = asyncio.Lock()
 
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if self._writer is not None:
+            self._writer.close()
+            self._writer = None
+
     def addMsgToBuffer(self, message):
         if len(self._messageBuffer) >= config.STATS_SERVER_MESSAGE_BUFFER_MAX_SIZE:
             logger.warning(
@@ -83,7 +91,7 @@ class StatsPublisher:
         # Actually currently it's no needed as long as we use a port 30000 as destination and specified port != 30000 as source
         # (which is less than default range of ports used to establish connection on Linux)
         logger.debug("Cannot publish stats message: {}".format(ex))
-        self._writer = None
+        self.close()
 
 
 @unique
