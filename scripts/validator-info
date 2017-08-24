@@ -4,6 +4,8 @@
 import sys
 import argparse
 
+import jsonpickle
+
 import asyncio
 import concurrent.futures
 
@@ -35,8 +37,9 @@ async def handle_client(client_reader, client_writer):
             elif not data:
                 logger.warning("EOF received, closing connection")
                 return
-
-        logger.debug("Received data: {}".format(data))
+            else:
+                #print(jsonpickle.decode(data.decode()))
+                logger.debug("Received data: {}".format(data))
 
 
 def accept_client(client_reader, client_writer):
