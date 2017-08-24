@@ -3,15 +3,21 @@
 
 import sys
 import argparse
+import os
 
-import jsonpickle
+import json
+import pprint
+
+from collections import OrderedDict
 
 import asyncio
 import concurrent.futures
 
 from stp_core.common.log import getlogger
 from plenum.common.config_util import getConfig
-from plenum.config import STATS_SERVER_PORT, STATS_SERVER_IP
+
+from stp_core.common.log import Logger
+
 
 logger = getlogger()
 config = getConfig()
@@ -40,6 +46,8 @@ async def handle_client(client_reader, client_writer):
             else:
                 #print(jsonpickle.decode(data.decode()))
                 logger.debug("Received data: {}".format(data))
+                stats = json.loads(data.decode(), object_pairs_hook=OrderedDict)
+                print(json.dumps(stats, indent=2))
 
 
 def accept_client(client_reader, client_writer):
@@ -82,40 +90,81 @@ def main():
     parser.add_argument("--json", action="store_true",
                         help="Format output as JSON (ignores -v")
 
-    parser.add_argument(
-        "-i", "--ip", metavar="IP", default=STATS_SERVER_IP,
+    statfile_group = parser.add_argument_group(
+        "statfile", "settings for exploring validator stats from stat file"
+    )
+
+    statfile_group.add_argument("--statfile", metavar="PATH",
+                        default=os.path.join(config.baseDir, "stats.json"),
+                        help=("Path to stats file"))
+    statfile_group.add_argument("--watch", action="store_true",
+                        help="Watch for stats file updates")
+
+    socket_group = parser.add_argument_group(
+        "socket", "settings for exploring validator stats from socket"
+    )
+
+    socket_group.add_argument("--listen", action="store_true",
+                        help="Listen socket for stats (ignores --statfile)")
+
+    socket_group.add_argument(
+        "-i", "--ip", metavar="IP", default=config.STATS_SERVER_IP,
         help="Server IP"
     )
-    parser.add_argument(
-        "-p", "--port", metavar="PORT", default=STATS_SERVER_PORT,
+    socket_group.add_argument(
+        "-p", "--port", metavar="PORT", default=config.STATS_SERVER_PORT,
         type=check_unsigned, help="Server port"
     )
 
+    other_group = parser.add_argument_group(
+        "other", "other settings"
+    )
+
+    other_group.add_argument("--stdlog", action="store_true",
+                        help="Enable logging to stdout")
+
+
     args = parser.parse_args()
 
+    config.enableStdOutLogging = args.stdlog
+    logFileName = os.path.join(config.baseDir, os.path.basename(sys.argv[0] + ".log"))
+    Logger().enableFileLogging(logFileName)
+
     logger.debug("Cmd line arguments: {}".format(args))
-    logger.info("Starting server on {}:{} ...".format(args.ip, args.port))
 
-    loop = asyncio.get_event_loop()
-    coro = asyncio.start_server(accept_client, args.ip, args.port, loop=loop)
-    server = loop.run_until_complete(coro)
+    if args.listen:
+        logger.info("Starting server on {}:{} ...".format(args.ip, args.port))
+        print("Starting server on {}:{} ...".format(args.ip, args.port))
 
-    # Serve requests until Ctrl+C is pressed
-    print('Serving on {} ...'.format(server.sockets[0].getsockname()))
-    logger.info("Serving on {}:{} ...".format(args.ip, args.port))
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
+        loop = asyncio.get_event_loop()
+        coro = asyncio.start_server(accept_client, args.ip, args.port, loop=loop)
+        server = loop.run_until_complete(coro)
 
-    logger.info("Stopping server ...")
+        logger.info("Serving on {}:{} ...".format(args.ip, args.port))
+        print('Serving on {} ...'.format(server.sockets[0].getsockname()))
 
-    # Close the server
-    server.close()
-    for task in clients.keys():
-        task.cancel()
-    loop.run_until_complete(server.wait_closed())
-    loop.close()
+        # Serve requests until Ctrl+C is pressed
+        try:
+            loop.run_forever()
+        except KeyboardInterrupt:
+            pass
+
+        logger.info("Stopping server ...")
+        print("Stopping server ...")
+
+        # Close the server
+        server.close()
+        for task in clients.keys():
+            task.cancel()
+        loop.run_until_complete(server.wait_closed())
+        loop.close()
+    else:
+        logger.info("Reading file {} ...".format(args.statfile))
+        with open(args.statfile) as f:
+            stats = json.loads(f.read(), object_pairs_hook=OrderedDict)
+        logger.debug("Data {}".format(stats))
+        print(json.dumps(stats, indent=2))
+
     logger.info("Done")
 
 
