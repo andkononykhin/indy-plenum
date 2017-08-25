@@ -4,6 +4,7 @@
 import sys
 import argparse
 import os
+import datetime
 
 import json
 import pprint
@@ -19,9 +20,9 @@ from plenum.common.config_util import getConfig
 from stp_core.common.log import Logger
 
 
-logger = getlogger()
 config = getConfig()
 
+logger = None # to make flake8 happy
 clients = {}  # task -> (reader, writer)
 
 
@@ -44,9 +45,9 @@ async def handle_client(client_reader, client_writer):
                 logger.warning("EOF received, closing connection")
                 return
             else:
-                #print(jsonpickle.decode(data.decode()))
                 logger.debug("Received data: {}".format(data))
-                stats = json.loads(data.decode(), object_pairs_hook=OrderedDict)
+                stats = json.loads(data.decode(),
+                                   object_pairs_hook=OrderedDict)
                 print(json.dumps(stats, indent=2))
 
 
@@ -62,6 +63,103 @@ def accept_client(client_reader, client_writer):
         logger.info("End Connection")
 
     task.add_done_callback(client_done)
+
+
+def output_json(stats):
+    print(json.dumps(stats, indent=2))
+
+
+def output_plain(stats, verbose=False):
+
+    def format_state(state):
+        return "is {} {}".format(
+            "currently" if state == "running" else "", state
+        )
+
+    def format_port(port, protocol, ip):
+        return "{}{}".format(
+            port,
+            "/{} on {}".format(protocol, ip) if verbose else ""
+        )
+
+    def format_uptime(secs):
+        days, remainder = divmod(secs, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        parts = []
+
+        for s, v in zip(['day', 'hour', 'minute', 'second'],
+                        [days, hours, minutes, seconds]):
+            if v or len(parts):
+                parts.append("{} {}{}".format(v, s, '' if v == 1 else 's'))
+
+        return ", ".join(parts) if parts else '0 seconds'
+
+    lines = [
+        "Validator {} {}".format(stats['alias'], format_state(stats['state'])),
+        "#Current time:     {}".format(
+            datetime.datetime.fromtimestamp(
+                stats['timestamp']).strftime(
+                    "%A, %B %{0}d, %Y %{0}I:%M:%S %p".format(
+                        '#' if os.name == 'nt' else '-'))
+        ),
+        "Validator DID:    {}".format(stats['did']),
+        "Verification Key: {}".format(stats['verkey']),
+        "Node Port:        {}".format(
+            format_port(
+                stats['bindings']['node']['port'],
+                stats['bindings']['node']['protocol'],
+                stats['bindings']['node']['ip'])
+        ),
+        "Client Port:      {}".format(
+            format_port(
+                stats['bindings']['client']['port'],
+                stats['bindings']['client']['protocol'],
+                stats['bindings']['client']['ip'])
+        ),
+        "Metrics:",
+        "  Uptime: {}".format(format_uptime(stats['metrics']['uptime'])),
+        "#  Total Config Transactions:  {}".format(
+            stats['metrics']['transaction-count']['config']),
+        "  Total Ledger Transactions:  {}".format(
+            stats['metrics']['transaction-count']['ledger']),
+        "  Total Pool Transactions:    {}".format(
+            stats['metrics']['transaction-count']['pool']),
+        "  Read Transactions/Seconds:  {}".format(
+            stats['metrics']['average-per-second']['read-transactions']),
+        "  Write Transactions/Seconds: {}".format(
+            stats['metrics']['average-per-second']['write-transactions']),
+        "Reachable Hosts:   {}/{}".format(
+            stats['pool']['reachable']['count'], stats['pool']['total-count'])
+    ]
+
+    lines += [
+        "#  {}".format(alias) for alias in stats['pool']['reachable']['list']
+    ]
+
+    lines += [
+        "Unreachable Hosts: 1/6".format(
+            stats['pool']['unreachable']['count'],
+            stats['pool']['total-count']
+        )
+    ]
+
+    lines += [
+        "#  {}".format(alias) for alias in stats['pool']['unreachable']['list']
+    ]
+
+    lines += [
+        "#Software Versions:",
+        "#  indy-node: 1.0.28".format(stats['software']['indy-node']),
+        "#  sovrin:    1.0.3".format(stats['software']['sovrin'])
+    ]
+
+    # skip lines with started with '#' if not verbose
+    # or remove '#' otherwise
+    print("\n".join(
+        [l[(1 if l[0] == '#' else 0):]
+            for l in lines if verbose or l[0] != '#'])
+    )
 
 
 def main():
@@ -85,27 +183,36 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    parser.add_argument("-v", "--verbose", action="store_true",
-                        help="Verbose mode (command line)")
-    parser.add_argument("--json", action="store_true",
-                        help="Format output as JSON (ignores -v")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Verbose mode (command line)"
+    )
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Format output as JSON (ignores -v)"
+    )
 
     statfile_group = parser.add_argument_group(
         "statfile", "settings for exploring validator stats from stat file"
     )
 
-    statfile_group.add_argument("--statfile", metavar="PATH",
-                        default=os.path.join(config.baseDir, "stats.json"),
-                        help=("Path to stats file"))
-    statfile_group.add_argument("--watch", action="store_true",
-                        help="Watch for stats file updates")
+    statfile_group.add_argument(
+        "--statfile", metavar="PATH",
+        default=os.path.join(config.baseDir, "stats.json"),
+        help=("Path to stats file")
+    )
+    statfile_group.add_argument(
+        "--watch", action="store_true", help="Watch for stats file updates"
+    )
 
     socket_group = parser.add_argument_group(
         "socket", "settings for exploring validator stats from socket"
     )
 
-    socket_group.add_argument("--listen", action="store_true",
-                        help="Listen socket for stats (ignores --statfile)")
+    socket_group.add_argument(
+        "--listen", action="store_true",
+        help="Listen socket for stats (ignores --statfile)"
+    )
 
     socket_group.add_argument(
         "-i", "--ip", metavar="IP", default=config.STATS_SERVER_IP,
@@ -121,13 +228,15 @@ def main():
     )
 
     other_group.add_argument("--stdlog", action="store_true",
-                        help="Enable logging to stdout")
-
+                             help="Enable logging to stdout")
 
     args = parser.parse_args()
 
     config.enableStdOutLogging = args.stdlog
-    logFileName = os.path.join(config.baseDir, os.path.basename(sys.argv[0] + ".log"))
+    logFileName = os.path.join(config.baseDir,
+                               os.path.basename(sys.argv[0] + ".log"))
+
+    logger = getlogger()
     Logger().enableFileLogging(logFileName)
 
     logger.debug("Cmd line arguments: {}".format(args))
@@ -137,7 +246,8 @@ def main():
         print("Starting server on {}:{} ...".format(args.ip, args.port))
 
         loop = asyncio.get_event_loop()
-        coro = asyncio.start_server(accept_client, args.ip, args.port, loop=loop)
+        coro = asyncio.start_server(accept_client,
+                                    args.ip, args.port, loop=loop)
         server = loop.run_until_complete(coro)
 
         logger.info("Serving on {}:{} ...".format(args.ip, args.port))
@@ -160,10 +270,16 @@ def main():
         loop.close()
     else:
         logger.info("Reading file {} ...".format(args.statfile))
+
         with open(args.statfile) as f:
             stats = json.loads(f.read(), object_pairs_hook=OrderedDict)
+
         logger.debug("Data {}".format(stats))
-        print(json.dumps(stats, indent=2))
+
+        if args.json:
+            output_json(stats)
+        else:
+            output_plain(stats, args.verbose)
 
     logger.info("Done")
 
