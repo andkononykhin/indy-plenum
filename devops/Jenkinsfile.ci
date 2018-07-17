@@ -1,0 +1,96 @@
+#!groovy
+
+def evLibrary = library(identifier: 'evernym-aws-codebuild@aws-codebuild', retriever: modernSCM(
+    github(credentialsId: 'evernym-github-machine-user', repoOwner: 'evernym', repository: 'jenkins-shared')
+)).com.evernym.pipeline
+
+logger = evLibrary.Logger.new(this)
+notifier = evLibrary.Notifier.new(this)
+logger.setGlobalLevel('TRACE')
+
+pipelineWrapper({
+    nodeWrapper {
+
+        List osnames = [
+            'xenial',
+            //'centos7'
+        ]
+        def modulesToTest = ['common', 'ledger']
+
+        stage('Checkout from SCM') {
+            checkout scm
+        }
+
+        def utils = evLibrary.Utils.new(this)
+        // TODO Cargo.toml is necessary only for variable in makefile which is not used for that context, thus
+        // shouldn't be taken into account when deciding to rebuild docker images
+        def buildCtx = evLibrary.AwsCodeBuildHelper.BuildCtx.new('indy-plenum', ['ci'])
+        def awsCBHelper = evLibrary.AwsCodeBuildHelper.new(this, buildCtx)
+
+        stage('Upload source to S3') {
+            awsCBHelper.uploadSourceToS3()
+        }
+
+        Map builds = osnames.collectEntries { osname ->
+            [(osname): {
+                def buildImageTag
+                def prTag = "ci-$osname"
+
+
+                stage("$osname: Resolve image tag") {
+                    buildImageTag = "0.1.0-xenial-ci"
+                    buildImageName = "indy-plenum-codebuild"
+                    logger.info("CI docker image name: $buildImageName")
+                    logger.info("CI docker image tag: $buildImageTag")
+                }
+
+                awsCBHelper.build() {
+                    projectTag = prTag
+
+                    // env and build spec
+                    imageTag = buildImageTag
+                    buildspec = 'devops/buildspec.ci.yml'
+                    envv = [
+                        [name: 'OSNAME', value: osname],
+                    ]
+
+                    // build spec for env image
+                    envBuildSrc = ['ci'] // TODO make more accurate
+                    envBuildCmds = [
+                        "docker build -t ${buildImageName}:${buildImageTag} -f ci/ubuntu.dockerfile ci"
+                    ]
+                    envBuildLocalName = "${buildImageName}:${buildImageTag}"
+                    envBuildEnvv = [
+                        [name: 'OSNAME', value: osname],
+                        [name: 'MODULES', value: modulesToTest.join(' ')],
+                        [name: 'CI_DOCKER_TAG', value: buildImageTag],
+                    ]
+
+                    onArtifacts = {
+                        this.stage("$osname: Archive artifacts") {
+                            utils.archiveArtifacts("logs/*.log*") {
+                                truncate = true
+                                allowEmptyArchive = true
+                            }
+
+                            this.junit "logs/test.*.xml"
+                        }
+                    }
+                }
+            }]
+        }
+
+        stage("Build and test") {
+            builds.failFast = false
+            utils.parallel builds
+        }
+    }
+}, { err ->
+    if (err) {
+        logger.error("Pipeline failed with the error $err")
+    }
+
+    stage("Build result notification") {
+        notifier.email()
+    }
+})
