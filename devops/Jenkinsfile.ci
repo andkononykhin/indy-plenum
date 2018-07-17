@@ -52,6 +52,7 @@ pipelineWrapper({
                     buildspec = 'devops/buildspec.ci.yml'
                     envv = [
                         [name: 'OSNAME', value: osname],
+                        [name: 'MODULES', value: modulesToTest.join(' ')],
                     ]
 
                     // build spec for env image
@@ -62,7 +63,6 @@ pipelineWrapper({
                     envBuildLocalName = "${buildImageName}:${buildImageTag}"
                     envBuildEnvv = [
                         [name: 'OSNAME', value: osname],
-                        [name: 'MODULES', value: modulesToTest.join(' ')],
                         [name: 'CI_DOCKER_TAG', value: buildImageTag],
                     ]
 
